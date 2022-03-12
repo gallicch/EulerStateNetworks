@@ -1,3 +1,9 @@
+"""
+Main file of the repository with the main class definitions
+
+@author: gallicch
+"""
+
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
