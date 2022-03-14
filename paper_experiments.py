@@ -15,6 +15,8 @@ import os
 import pickle
 from time import time, localtime, strftime
 
+import gdown
+
 #GPU setup
 #use the following line to isolate a specif GPU in case you desire to run
 #the experiments in a single-GPU mode (as in the paper)
@@ -59,18 +61,18 @@ task_output_units = {
 
 #location of the dataset files for download
 task_filenames = {
-    'Adiac':'https://drive.google.com/file/d/1F6kajRTJg9o-nNr9De5q4pZaeyx_bIFm',
-    'CharacterTrajectories':'https://drive.google.com/file/d/1A0sXA8RxJS0wg3mlXuZJvlZlCpTq5ihr',
-    'ECG5000':'https://drive.google.com/file/d/1yOMn3-Phqqf53fPFF2X-huh3ilbUb9SB',
-    'Epilepsy':'https://drive.google.com/file/d/1CsfcIXeh1B95DOr9bcvtaa8SP7Ncx8oT',
-    'Heartbeat':'https://drive.google.com/file/d/1ESHU06RHM1p7H9JW6hoKSSSRCy8AfcAg',
-    'Libras':'https://drive.google.com/file/d/14EtYLNt9K2Dd4SX2V6la7O8RwySrzlUf',
-    'ShapesAll':'https://drive.google.com/file/d/1UvGPbl3YyFAEL824xmDsBjVgqYMLtGp7',
-    'Wafer':'https://drive.google.com/file/d/1UvGPbl3YyFAEL824xmDsBjVgqYMLtGp7',
-    'HandOutlines':'https://drive.google.com/file/d/1POvIhl3vuZRS3a_v9-v7D8ibVXdyKZnv',
-    'IMDB_embedded':'https://drive.google.com/file/d/1oLPQKcB0Gpu4iqpw1XM72v8sba4sYgvQ',
-    'Reuters_embedded':'https://drive.google.com/file/d/1NPCBzWQ605vMfcy5fv4wkGm_7FScoNnT',
-    'SpokenArabicDigits':'https://drive.google.com/file/d/19K1sMn53ZxBIabQ_bzpT67uZwOyxZ5Xr'
+    'Adiac':'https://drive.google.com/uc?id=1F6kajRTJg9o-nNr9De5q4pZaeyx_bIFm',
+    'CharacterTrajectories':'https://drive.google.com/uc?id=1A0sXA8RxJS0wg3mlXuZJvlZlCpTq5ihr',
+    'ECG5000':'https://drive.google.com/uc?id=1yOMn3-Phqqf53fPFF2X-huh3ilbUb9SB',
+    'Epilepsy':'https://drive.google.com/uc?id=1CsfcIXeh1B95DOr9bcvtaa8SP7Ncx8oT',
+    'Heartbeat':'https://drive.google.com/uc?id=1ESHU06RHM1p7H9JW6hoKSSSRCy8AfcAg',
+    'Libras':'https://drive.google.com/uc?id=14EtYLNt9K2Dd4SX2V6la7O8RwySrzlUf',
+    'ShapesAll':'https://drive.google.com/uc?id=1UvGPbl3YyFAEL824xmDsBjVgqYMLtGp7',
+    'Wafer':'https://drive.google.com/uc?id=1UvGPbl3YyFAEL824xmDsBjVgqYMLtGp7',
+    'HandOutlines':'https://drive.google.com/uc?id=1POvIhl3vuZRS3a_v9-v7D8ibVXdyKZnv',
+    'IMDB_embedded':'https://drive.google.com/uc?id=1oLPQKcB0Gpu4iqpw1XM72v8sba4sYgvQ',
+    'Reuters_embedded':'https://drive.google.com/uc?id=1NPCBzWQ605vMfcy5fv4wkGm_7FScoNnT',
+    'SpokenArabicDigits':'https://drive.google.com/uc?id=19K1sMn53ZxBIabQ_bzpT67uZwOyxZ5Xr'
 }
 
 
@@ -81,16 +83,17 @@ def download_dataset(dataset_name, destination_folder):
     if not os.path.exists(destination_folder):
         os.makedirs(destination_folder)
     
-    url = dataset_filenames[dataset_name]
+    url = task_filenames[dataset_name]
     output_filename = dataset_name + '_dataset.p'
     output_path = os.path.join(destination_folder, output_filename)
     gdown.download(url, output_path, quiet=False)
+    #gdown.download(url, destination_folder, quiet=False)
     
     
 def task_settings(task_name):
+    global output_activation, loss_function, output_units
     if (task_name in task_output_units.keys()):
         output_units = task_output_units[task_name]
-
         if (output_units == 1):
             #in this case it is a binary classification task
             output_activation = 'sigmoid'
@@ -103,17 +106,19 @@ def task_settings(task_name):
         print('Warning: the specified task name is not valid')
 
 def load_task_data(task_name):
+    global keras_datasets_path, keras_dataset_filename, root_path, results_path
     #create the folder where all the datasets go
     #if it does not exist already
     if not os.path.exists(keras_datasets_path):
-        os.makedirs(keras_dataset_path)
+        os.makedirs(keras_datasets_path)
     #download the dataset for the specific task
     #if it does not exist already
     keras_dataset_filename = os.path.join(keras_datasets_path,task_name+'_dataset.p')
     if not os.path.exists(keras_dataset_filename):
-        download_dataset(task_name,keras_dataset_path)
+        download_dataset(task_name,keras_datasets_path)
     
     #load the data
+    print(keras_dataset_filename)
     dataset = pickle.load(open(keras_dataset_filename,"rb"))
     x_train_all,y_train_all,x_test, y_test,x_train, x_val, y_train, y_val = dataset[0],dataset[1],dataset[2],dataset[3],dataset[4],dataset[5],dataset[6],dataset[7]
 
@@ -259,6 +264,8 @@ build_model = {
 
 def run_experiment(task_name, model_type, x_test, y_test,x_train, x_val, y_train, y_val):
     
+    global results_path
+    
     model_selection_times_filename = os.path.join(results_path,'model_selection_times_'+model_type+'.p')
     times_filename = os.path.join(results_path,'times_'+model_type+'.p')
     accuracy_filename = os.path.join(results_path,'accuracy_'+model_type+'.p')
@@ -278,7 +285,7 @@ def run_experiment(task_name, model_type, x_test, y_test,x_train, x_val, y_train
     )
     
     results_logger = open(results_logger_filename,'w')
-    results_logger.write('Experiment with '+model_type+' on dataset '+ dataset_name + ' starting now\n')
+    results_logger.write('Experiment with '+model_type+' on dataset '+ task_name + ' starting now\n')
     time_string_start = strftime("%Y/%m/%d %H:%M:%S", localtime())
     results_logger.write('** local time = '+ time_string_start+'\n')
 
