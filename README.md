@@ -8,7 +8,7 @@ Currently, two files are provided
 * `paper_experiments.py`, which provides the code for replicating the experiments on the time-series classification datasets reported in the paper.
 
 ## Datasets
-The datasets used in this paper can be downloaded, individually for each task, using the function `load_task_data(task_name)` in `paper_experiments.py`, where `task_name` is a string that indicates one of the used tasks (i.e., 'Adiac', 'CharacterTrajectories', 'ECG5000', 'Epilepsy', 'Heartbeat', 'Libras', 'ShapesAll', 'Wafer', 'HandOutlines', 'IMDB_embedded', 'Reuters_embedded', 'SpokenArabicDigits'). See an example of usage in the function `run_all_experiments(task_name)`
+The datasets used in this paper can be downloaded, individually for each task, using the function `load_task_data(task_name)` in `paper_experiments.py`, where `task_name` is a string that indicates one of the used tasks (i.e., 'Adiac', 'CharacterTrajectories', 'ECG5000', 'Epilepsy', 'Heartbeat', 'Libras', 'ShapesAll', 'Wafer', 'HandOutlines', 'IMDB_embedded', 'Reuters_embedded', 'SpokenArabicDigits'). See an example of usage in the function `run_all_experiments(task_name)` in `paper_experiments.py`.
  
 Alternatively, the pool of datasets used in the paper can be downloaded from the following link https://www.dropbox.com/sh/ewsym947w95fgjd/AAC9gnGIVLBjUXq9aYtfVkrea?dl=0
 
