@@ -1,6 +1,6 @@
 # EulerStateNetworks
 This repository contains the TensorFlow 2.0 / Keras implementation of Euler State Networks (EuSN), as described in the paper
-C. Gallicchio, "Euler State Networks: Non-dissipative Reservoir Computing", Submitted to Journal (2023)
+C. Gallicchio, "Euler State Networks", Submitted to Journal (2022) [https://arxiv.org/abs/2203.09382] 
 
 ## Files
 Currently, two files are provided
