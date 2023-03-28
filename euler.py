@@ -7,7 +7,7 @@ Main file of the repository with the main class definitions
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-
+from sklearn.linear_model import RidgeClassifier
 
 class EulerReservoirCell(keras.layers.Layer):
     #Implements the reservoir layer of the Euler State Network
@@ -170,6 +170,8 @@ class RingReservoirCell(keras.layers.Layer):
 
 class AntisymmetricRNNCell(keras.layers.Layer):
     #Implements the recurrent layer of an Antisymmetric RNN
+    #from the paper Chang, Bo, et al. "AntisymmetricRNN: A dynamical system view 
+    #on recurrent neural networks." arXiv preprint arXiv:1902.09689 (2019).
 
     def __init__(self, units, 
                  input_scaling = 1.,
@@ -214,22 +216,24 @@ class AntisymmetricRNNCell(keras.layers.Layer):
 
     
     
+    
 class EuSN(keras.Model):
     #Implements an Euler State Network model for time-series classification problems
     #
     # The architecture comprises a recurrent layer with EulerReservoirCell,
     # followed by a trainable dense readout layer for classification
 
-    def __init__(self, units, output_units, output_activation,
+    def __init__(self, units,
                  input_scaling = 1., bias_scaling = 1.0, recurrent_scaling = 1,
                  epsilon = 0.01, gamma = 0.001, 
+                 readout_regularizer = 1.0,
                  activation = tf.nn.tanh,
                  **kwargs):
         
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    keras.layers.Masking(),
+                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = EulerReservoirCell(units = units,
                                                                        input_scaling = input_scaling,
                                                                        bias_scaling = bias_scaling,
@@ -239,34 +243,27 @@ class EuSN(keras.Model):
 
 
         ])
-        self.readout = keras.Sequential([
-            keras.layers. Dense(output_units, activation = output_activation)
-        ])   
+        
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
 
        
         
     def call(self, inputs):
         reservoir_states = self.reservoir(inputs)
-        output = self.readout(reservoir_states)
+        output = self.readout.predict(reservoir_states)
         return output
+
     
     def fit(self, x, y, **kwargs):
         # For all the RC methods, we avoid doing the same reservoir operations at each epoch
         # To this aim, we pre-compute all the states and then we invoke the readout fit method
         x_train_states = self.reservoir(x)
+       
+        self.readout.fit(x_train_states, y)
         
-        #the same is done on the validation set
-        if 'validation_data' in kwargs:
-            x_val,y_val = kwargs['validation_data']
-            x_val_states = self.reservoir(x_val)
-            kwargs['validation_data'] = (x_val_states, y_val)
-        
-        return self.readout.fit(x_train_states,y,**kwargs)
-        
-    def evaluate(self, x, y, **kwargs):
+    def evaluate(self, x, y):
         x_train_states = self.reservoir(x)
-        return self.readout.evaluate(x_train_states,y,**kwargs)
-    
+        return self.readout.score(x_train_states,y)
 
 
 
@@ -276,49 +273,44 @@ class ESN(keras.Model):
     # The architecture comprises a recurrent layer with ReservoirCell,
     # followed by a trainable dense readout layer for classification
     
-    def __init__(self, units, output_units, output_activation,
+    def __init__(self, units,
                  input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
                  leaky = 1, 
+                 readout_regularizer = 1.0,
                  activation = tf.nn.tanh,
                  **kwargs):
         
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    keras.layers.Masking(),
+                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = ReservoirCell(units = units,
                                                           input_scaling = input_scaling,
                                                           bias_scaling = bias_scaling,
                                                           spectral_radius = spectral_radius,
                                                           leaky = leaky))
         ])
-        self.readout = keras.Sequential([
-            keras.layers.Dense(output_units, activation = output_activation)
-        ])   
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
         
        
         
     def call(self, inputs):
         reservoir_states = self.reservoir(inputs)
-        output = self.readout(reservoir_states)
+        output = self.readout.predict(reservoir_states)
         return output
+    
     
     def fit(self, x, y, **kwargs):
         # For all the RC methods, we avoid doing the same reservoir operations at each epoch
         # To this aim, we pre-compute all the states and then we invoke the readout fit method
         x_train_states = self.reservoir(x)
         
-        #the same is done on the validation set
-        if 'validation_data' in kwargs:
-            x_val,y_val = kwargs['validation_data']
-            x_val_states = self.reservoir(x_val)
-            kwargs['validation_data'] = (x_val_states, y_val)
+        self.readout.fit(x_train_states, y)
         
-        return self.readout.fit(x_train_states,y,**kwargs)
-        
-    def evaluate(self, x, y, **kwargs):
+    def evaluate(self, x, y):
         x_train_states = self.reservoir(x)
-        return self.readout.evaluate(x_train_states,y,**kwargs)
+        return self.readout.score(x_train_states,y)
     
 
 
@@ -328,47 +320,296 @@ class RESN(keras.Model):
     # The architecture comprises a recurrent layer with RingReservoirCell,
     # followed by a trainable dense readout layer for classification
 
-    def __init__(self, units, output_units, output_activation,
+    
+    def __init__(self, units,
                  input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
                  leaky = 1, 
+                 readout_regularizer = 1.0,
                  activation = tf.nn.tanh,
                  **kwargs):
         
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    keras.layers.Masking(),
+                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = RingReservoirCell(units = units,
                                                           input_scaling = input_scaling,
                                                           bias_scaling = bias_scaling,
                                                           spectral_radius = spectral_radius,
                                                           leaky = leaky))
         ])
-        self.readout = keras.Sequential([
-            keras.layers.Dense(output_units, activation = output_activation)
-        ])   
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
         
        
         
     def call(self, inputs):
         reservoir_states = self.reservoir(inputs)
-        output = self.readout(reservoir_states)
+        output = self.readout.predict(reservoir_states)
         return output
+    
     
     def fit(self, x, y, **kwargs):
         # For all the RC methods, we avoid doing the same reservoir operations at each epoch
         # To this aim, we pre-compute all the states and then we invoke the readout fit method
         x_train_states = self.reservoir(x)
         
-        #the same is done on the validation set
-        if 'validation_data' in kwargs:
-            x_val,y_val = kwargs['validation_data']
-            x_val_states = self.reservoir(x_val)
-            kwargs['validation_data'] = (x_val_states, y_val)
+        self.readout.fit(x_train_states, y)
         
-        return self.readout.fit(x_train_states,y,**kwargs)
-        
-    def evaluate(self, x, y, **kwargs):
+    def evaluate(self, x, y):
         x_train_states = self.reservoir(x)
-        return self.readout.evaluate(x_train_states,y,**kwargs)
+        return self.readout.score(x_train_states,y)
+
+
     
+#### The following variants use a buffer to avoid computing all the states at once 
+#### use the following for larger datasets (as in the case of sequential MNIST used in the paper)
+    
+class EuSN_buffer(keras.Model):
+    #Implements an Euler State Network model for time-series classification problems
+    #
+    # The architecture comprises a recurrent layer with EulerReservoirCell,
+    # followed by a trainable dense readout layer for classification
+
+    def __init__(self, units,
+                 input_scaling = 1., bias_scaling = 1.0, recurrent_scaling = 1,
+                 epsilon = 0.01, gamma = 0.001, 
+                 readout_regularizer = 1.0,
+                 activation = tf.nn.tanh,
+                 buffer_size = 128,
+                 **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        self.units = units
+        self.buffer_size = buffer_size
+        
+        self.reservoir = keras.Sequential([
+                    keras.layers.RNN(cell = EulerReservoirCell(units = units,
+                                                                       input_scaling = input_scaling,
+                                                                       bias_scaling = bias_scaling,
+                                                                       recurrent_scaling = recurrent_scaling,
+                                                                       epsilon = epsilon,
+                                                                       gamma = gamma)),
+
+
+        ])
+        
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
+       
+        
+    def call(self, x):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        
+        output = self.readout.predict(x_train_1)
+
+        return output
+    
+    
+        
+    def evaluate(self, x, y):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        
+        return self.readout.score(x_train_1,y)
+    
+    def fit(self, x, y, **kwargs):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+       
+        
+        return self.readout.fit(x_train_1,y)
+    
+    
+class ESN_buffer(keras.Model):
+    #Implements an Echo State Network model for time-series classification problems
+    #
+    # The architecture comprises a recurrent layer with ReservoirCell,
+    # followed by a trainable dense readout layer for classification
+    
+    def __init__(self, units,
+                 input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
+                 leaky = 1, 
+                 readout_regularizer = 1.0,
+                 activation = tf.nn.tanh,
+                 buffer_size = 128,
+                 **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        self.units = units
+        self.buffer_size = buffer_size
+        
+        self.reservoir = keras.Sequential([
+                    keras.layers.RNN(cell = ReservoirCell(units = units,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky))
+        ])
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
+        
+       
+        
+    def call(self, x):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        
+        output = self.readout.predict(x_train_1)
+        return output
+    
+    
+        
+    def evaluate(self, x, y):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        return self.readout.score(x_train_1,y)
+    
+    def fit(self, x, y, **kwargs):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        return self.readout.fit(x_train_1,y)
+    
+    
+class RESN_buffer(keras.Model):
+    #Implements an Ring-Echo State Network model for time-series classification problems
+    #
+    # The architecture comprises a recurrent layer with RingReservoirCell,
+    # followed by a trainable dense readout layer for classification
+    
+    def __init__(self, units,
+                 input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
+                 leaky = 1, 
+                 readout_regularizer = 1.0,
+                 activation = tf.nn.tanh,
+                 buffer_size = 128,
+                 **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        self.units = units
+        self.buffer_size = buffer_size
+        
+        self.reservoir = keras.Sequential([
+                    keras.layers.RNN(cell = RingReservoirCell(units = units,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky))
+        ])
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
+        
+       
+        
+    def call(self, x):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        #rl = reservoir(xlocal)
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        
+        output = self.readout.predict(x_train_1)
+        return output
+    
+    
+        
+    def evaluate(self, x, y):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        return self.readout.score(x_train_1,y)
+    
+    def fit(self, x, y, **kwargs):
+        #training set
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+
+        x_train_1 = np.zeros(shape = (x.shape[0],self.units))
+        for i in range(buffer_number-1):
+            xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        i = i+1
+        xlocal = x[i*buffer_size:(i+1)*buffer_size,:,:]
+        x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
+        
+        return self.readout.fit(x_train_1,y)
