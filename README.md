@@ -5,7 +5,9 @@ C. Gallicchio, "Euler State Networks: Non-dissipative Reservoir Computing", Subm
 ## Files
 Currently, two files are provided
 * `euler.py`, which contains the main classes definition, including the EulerReservoirCell, the EuSN, and all the recurrent layers and architectures (both Reservoir Computing-based and fully trainable) used in the experiments
-* `paper_experiments.py`, which provides the code for replicating the experiments on the time-series classification datasets reported in the paper.
+* `experiments_RC.py`, which contains the code for running the experiments on the benchmarks with all the reservoir methods (EuSN, ESN, R-ESN) used in the paper;
+* `experiments_RC_MNIST.py`, which contains the code for running the experiments on the benchmarks with all the reservoir methods (EuSN, ESN, R-ESN) used in the paper for the sequential MNIST task (the only difference is the usage of a buffering approach while computing the reservoir states, to keep the one-shot training of the readout)
+* `experiments_trainable.py`, which contains all the code for running the experiments on the benchmarks with all the fully trainable models (GRU, A-RNN, RNN) used in the paper
 
 ## Datasets
 The datasets used in this paper can be downloaded, individually for each task, using the function `load_task_data(task_name)` in `paper_experiments.py`, where `task_name` is a string that indicates one of the used tasks (i.e., 'Adiac', 'CharacterTrajectories', 'ECG5000', 'Epilepsy', 'Heartbeat', 'Libras', 'ShapesAll', 'Wafer', 'HandOutlines', 'IMDB_embedded', 'Reuters_embedded', 'SpokenArabicDigits'). 
