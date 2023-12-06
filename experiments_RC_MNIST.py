@@ -357,3 +357,112 @@ for dataset_name in dataset_names:
     results_logger.write('input scaling = {}; bias scaling = {}; spectral radius = {}\n'.format(best_input_scaling, best_bias_scaling, best_spectral_radius))
     results_logger.close()
 
+
+    #######
+    # DeepESN experiments
+    model_type = 'DeepESN'
+
+    model_selection_times_filename = os.path.join(results_path,'model_selection_times_'+model_type+'.p')
+    times_filename = os.path.join(results_path,'times_'+model_type+'.p')
+    accuracy_filename = os.path.join(results_path,'accuracy_'+model_type+'.p')
+
+    results_logger_filename = os.path.join(results_path,'results_logger_'+model_type+'.txt')
+
+    results_logger = open(results_logger_filename,'w')
+    results_logger.write('Experiment with '+model_type+' on dataset '+ dataset_name + ' starting now\n')
+    time_string_start = strftime("%Y/%m/%d %H:%M:%S", localtime())
+    results_logger.write('** local time = '+ time_string_start+'\n')
+
+    initial_model_selection_time = time()
+
+    # --- model selection start ---
+    best_val_score = 0
+    for i in range(max_trials):
+        
+        if (time()-initial_model_selection_time > max_time):
+            print('--> terminating the model selection for exceeding max time after {} configurations.\n'.format(i))
+            results_logger.write('--> terminating the model selection for exceeding max time after {} configurations.\n'.format(i))
+            break
+
+        
+        num_layers = np.random.randint(low = 2, high = 6)
+        num_units = 10 * np.random.randint(1,high = 21)
+        leaky = 10**(np.random.randint(-5,high = 1))
+
+        input_scaling = 10**(np.random.randint(-3,high = 2))
+        spectral_radius = 0.1*(np.random.randint(1,high = 16))
+        bias_scaling = 10**(np.random.randint(-3,high = 2))
+        
+        val_score = 0
+        for j in range(num_guesses_ms):
+            model = DeepESN_buffer(num_units, num_layers = num_layers,
+                      leaky = leaky,
+                      input_scaling = input_scaling, bias_scaling = bias_scaling,
+                      spectral_radius= spectral_radius)
+            model.fit(x_train,y_train)
+            val_score = val_score + model.evaluate(x_val,y_val)
+        val_score = val_score / num_guesses
+
+        if (val_score > best_val_score):
+            best_leaky = leaky
+            best_num_units = num_units
+            best_num_layers = num_layers
+            best_input_scaling = input_scaling
+            best_bias_scaling = bias_scaling
+            best_spectral_radius = spectral_radius
+            best_val_score = val_score
+            print('{} - Best Score = {}; num layers = {}'.format(i,best_val_score, best_num_layers))
+        else:
+            print('{} - Score = {}'.format(i,val_score))
+    print('Model selection completed')        
+    # --- model selection end ---
+    elapsed_model_selection_time = time()-initial_model_selection_time
+    time_string = strftime("%Y/%m/%d %H:%M:%S", localtime())
+    results_logger.write('model selection concluded at local time = '+ time_string+'\n')
+
+
+
+    #repeat the experiments with the best hyper-parameters. evaluate on the test set
+    acc_ts = []
+    required_time = []
+    for i in range(num_guesses):
+      initial_time = time()
+      model = DeepESN_buffer(best_num_units,num_layers = best_num_layers,
+                        leaky = best_leaky,input_scaling = best_input_scaling,
+                     bias_scaling = best_bias_scaling,spectral_radius =best_spectral_radius)
+      model.fit(x_train, y_train)
+      acc = model.evaluate(x_test,y_test)
+      required_time.append(time()-initial_time)
+      acc_ts.append(acc)
+
+    time_string_end = strftime("%Y/%m/%d %H:%M:%S", localtime())
+    results_logger.write('*** best model assessment concluded at local time = '+ time_string_end+'\n')
+
+
+    with open(model_selection_times_filename, 'wb') as f:
+        pickle.dump(elapsed_model_selection_time, f)
+    with open(times_filename, 'wb') as f:
+        pickle.dump(required_time, f)
+    with open(accuracy_filename, 'wb') as f:
+        pickle.dump(acc_ts, f)      
+
+    print('--'+model_type+' on {}--'.format(dataset_name))
+    print('Results: MEAN {} STD {}'.format(np.mean(acc_ts),np.std(acc_ts)))
+    print('----- required time: MEAN {} STD {}'.format(np.mean(required_time),np.std(required_time)))
+    print('----- total model selection time: {}'.format(elapsed_model_selection_time))
+
+
+
+    results_logger.write('** Results:\n')
+    results_logger.write('Start time: '+time_string_start+'\n')
+    results_logger.write('End time: '+time_string_end+'\n')
+    results_logger.write('Accuracy: MEAN {} STD {}\n'.format(np.mean(acc_ts),np.std(acc_ts)))
+    results_logger.write('Model selection time: {} seconds = {} minutes\n'.format(elapsed_model_selection_time, elapsed_model_selection_time/60))
+    results_logger.write('Average time for TR,TS: MEAN {} STD {}\n'.format(np.mean(required_time),np.std(required_time)))
+    results_logger.write('Model summary:\n')
+    results_logger.write('trainable parameters = {}\n'.format(model.readout.coef_.shape[0] * model.readout.coef_.shape[1] + model.readout.intercept_.shape[0]))
+    results_logger.write('num layers = {}\n'.format(best_num_layers))
+    results_logger.write('reservoir size = {}; leaky = {}\n'.format(best_num_units, best_leaky))
+    results_logger.write('input scaling = {}; bias scaling = {}; spectral radius = {}\n'.format(best_input_scaling, best_bias_scaling, best_spectral_radius))
+    results_logger.write('readout regularizer = {}\n'.format(best_readout_regularizer))
+    results_logger.close()
