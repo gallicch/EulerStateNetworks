@@ -233,7 +233,6 @@ class EuSN(keras.Model):
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = EulerReservoirCell(units = units,
                                                                        input_scaling = input_scaling,
                                                                        bias_scaling = bias_scaling,
@@ -283,7 +282,6 @@ class ESN(keras.Model):
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = ReservoirCell(units = units,
                                                           input_scaling = input_scaling,
                                                           bias_scaling = bias_scaling,
@@ -331,7 +329,6 @@ class RESN(keras.Model):
         super().__init__(**kwargs)
         
         self.reservoir = keras.Sequential([
-                    #keras.layers.Masking(),
                     keras.layers.RNN(cell = RingReservoirCell(units = units,
                                                           input_scaling = input_scaling,
                                                           bias_scaling = bias_scaling,
@@ -360,7 +357,108 @@ class RESN(keras.Model):
         x_train_states = self.reservoir(x)
         return self.readout.score(x_train_states,y)
 
+class DeepESN(keras.Model):
+    # Implements a Deep Echo State Network model for time-series classification problems
+    #
+    # The architecture comprises several recurrent layers with ReservoirCell,
+    # followed by a trainable dense readout layer for classification
+    # reference paper: Gallicchio, Claudio, Alessio Micheli, and Luca Pedrelli. "Deep reservoir computing: A critical experimental analysis." Neurocomputing 268 (2017): 87-99.
+    
+    def __init__(self, units,
+                 num_layers = 3,
+                 input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
+                 leaky = 1, 
+                 readout_regularizer = 1.0,
+                 activation = tf.nn.tanh,
+                 **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        #finds how many units are needed in each layer
+        units_per_layer = int(np.floor(units / num_layers))
+        units_first_layer = int(units - (units_per_layer * (num_layers-1)))
+        
+        self.reservoir = keras.Sequential([
+                    keras.layers.RNN(cell = ReservoirCell(units = units_first_layer,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky),
+                                    return_sequences = True, return_state = True)
+        ])
+        
+        #adds the pipeline of reservoir layers into the architecture
+        #notice that all the layers share the same value of the spectral radius
+        #and the same values for the input and bias scaling across the layers
+        for i in range(num_layers-2):
+            self.reservoir.add(
+                keras.layers.RNN(cell = ReservoirCell(units = units_per_layer,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky),
+                                return_sequences = True, return_state = True)
+            )
+        self.reservoir.add(
+            keras.layers.RNN(cell = ReservoirCell(units = units_per_layer,
+                                                      input_scaling = input_scaling,
+                                                      bias_scaling = bias_scaling,
+                                                      spectral_radius = spectral_radius,
+                                                      leaky = leaky),
+                            return_sequences = False)
+        )
+        
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
 
+        
+       
+        
+    def call(self, inputs):       
+        x = inputs
+        for i in range(len(model.reservoir.layers)-1):
+            allstates,r = model.reservoir.layers[i](x)
+            if (i==0):
+                reservoir_states = r
+            else:
+                reservoir_states = np.concatenate((reservoir_states,r), axis = 1)
+            x = allstates
+        r = model.reservoir.layers[-1](x)
+        reservoir_states = np.concatenate((reservoir_states,r), axis = 1)
+        
+        output = self.readout.predict(reservoir_states)
+        return output
+    
+    
+    def fit(self, x, y, **kwargs):
+        # For all the RC methods, we avoid doing the same reservoir operations at each epoch
+        # To this aim, we pre-compute all the states and then we invoke the readout fit method
+        #x_train_states = self.reservoir(x)
+        
+        xr = x
+        for i in range(len(self.reservoir.layers)-1):
+            allstates,r = self.reservoir.layers[i](xr)
+            if (i==0):
+                x_train_states = r
+            else:
+                x_train_states = np.concatenate((x_train_states,r), axis = 1)
+            xr = allstates
+        r = self.reservoir.layers[-1](xr)
+        x_train_states = np.concatenate((x_train_states,r), axis = 1)
+        
+        self.readout.fit(x_train_states, y)
+        
+    def evaluate(self, x, y):
+        xr = x
+        for i in range(len(self.reservoir.layers)-1):
+            allstates,r = self.reservoir.layers[i](xr)
+            if (i==0):
+                x_train_states = r
+            else:
+                x_train_states = np.concatenate((x_train_states,r), axis = 1)
+            xr = allstates
+        r = self.reservoir.layers[-1](xr)
+        x_train_states = np.concatenate((x_train_states,r), axis = 1)
+        return self.readout.score(x_train_states,y)
     
 #### The following variants use a buffer to avoid computing all the states at once 
 #### use the following for larger datasets (as in the case of sequential MNIST used in the paper)
@@ -613,3 +711,131 @@ class RESN_buffer(keras.Model):
         x_train_1[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir(xlocal)
         
         return self.readout.fit(x_train_1,y)
+        
+class DeepESN_buffer(keras.Model):
+    #Implements a Deep Echo State Network model for time-series classification problems
+    
+    def __init__(self, units,
+                 num_layers = 3,
+                 input_scaling = 1., bias_scaling = 1.0, spectral_radius = 0.9,
+                 leaky = 1, 
+                 readout_regularizer = 1.0,
+                 activation = tf.nn.tanh,
+                 buffer_size = 128,
+                 **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        self.buffer_size = buffer_size
+        
+        #finds how many units are needed in each layer
+        self.units_per_layer = int(np.floor(units / num_layers))
+        self.units_first_layer = int(units - (self.units_per_layer * (num_layers-1)))
+        
+        self.reservoir = keras.Sequential([
+                    keras.layers.RNN(cell = ReservoirCell(units = self.units_first_layer,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky),
+                                    return_sequences = True, return_state = True)
+        ])
+        
+        
+        for i in range(num_layers-2):
+            self.reservoir.add(
+                keras.layers.RNN(cell = ReservoirCell(units = self.units_per_layer,
+                                                          input_scaling = input_scaling,
+                                                          bias_scaling = bias_scaling,
+                                                          spectral_radius = spectral_radius,
+                                                          leaky = leaky),
+                                return_sequences = True, return_state = True)
+            )
+        self.reservoir.add(
+            keras.layers.RNN(cell = ReservoirCell(units = self.units_per_layer,
+                                                      input_scaling = input_scaling,
+                                                      bias_scaling = bias_scaling,
+                                                      spectral_radius = spectral_radius,
+                                                      leaky = leaky),
+                            return_sequences = False)
+        )
+        
+        self.readout = RidgeClassifier(alpha = readout_regularizer, solver = 'svd')
+
+    def reservoir_buffer(self, x, reservoir_number):
+        buffer_size = self.buffer_size
+        buffer_number = np.int(np.ceil(x.shape[0] / buffer_size))
+        if (reservoir_number == 0):
+            num_units = self.units_first_layer
+        else:
+            num_units = self.units_per_layer
+        
+        if (reservoir_number < len(self.reservoir.layers)-1):
+            x_states_all = np.zeros(shape = (x.shape[0],x.shape[1],num_units))
+            x_states_last = np.zeros(shape = (x.shape[0],num_units))
+            for i in range(buffer_number-1):
+                x_buffer = x[i*buffer_size:(i+1)*buffer_size,:,:]
+                x_states_all[i*buffer_size:(i+1)*buffer_size,:,:], x_states_last[i*buffer_size:(i+1)*buffer_size,:]= self.reservoir.layers[reservoir_number](x_buffer)
+            i = i+1
+            x_buffer = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_states_all[i*buffer_size:(i+1)*buffer_size,:,:], x_states_last[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir.layers[reservoir_number](x_buffer)
+            return x_states_all, x_states_last
+        else:
+            x_states_last = np.zeros(shape = (x.shape[0],num_units))
+            for i in range(buffer_number-1):
+                x_buffer = x[i*buffer_size:(i+1)*buffer_size,:,:]
+                x_states_last[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir.layers[reservoir_number](x_buffer)
+            i = i+1
+            x_buffer = x[i*buffer_size:(i+1)*buffer_size,:,:]
+            x_states_last[i*buffer_size:(i+1)*buffer_size,:] = self.reservoir.layers[reservoir_number](x_buffer)
+            return x_states_last
+
+    
+        
+    def call(self, inputs):
+        x = inputs
+        for i in range(len(model.reservoir.layers)-1):
+            allstates,r = self.reservoir_buffer(x,i)
+            if (i==0):
+                reservoir_states = r
+            else:
+                reservoir_states = np.concatenate((reservoir_states,r), axis = 1)
+            x = allstates
+        r = self.reservoir_buffer(x,i+1)
+        reservoir_states = np.concatenate((reservoir_states,r), axis = 1)
+        
+        output = self.readout.predict(reservoir_states)
+        return output
+    
+    
+    def fit(self, x, y, **kwargs):
+        # For all the RC methods, we avoid doing the same reservoir operations at each epoch
+        # To this aim, we pre-compute all the states and then we invoke the readout fit method
+        
+        xr = x
+        for i in range(len(self.reservoir.layers)-1):
+            print('x')
+            allstates,r = self.reservoir_buffer(xr,i)
+            if (i==0):
+                x_train_states = r
+            else:
+                x_train_states = np.concatenate((x_train_states,r), axis = 1)
+            xr = allstates
+        r = self.reservoir_buffer(xr,i+1)
+        x_train_states = np.concatenate((x_train_states,r), axis = 1)
+               
+        self.readout.fit(x_train_states, y)
+        
+    def evaluate(self, x, y):
+        #x_train_states = self.reservoir(x)
+        xr = x
+        for i in range(len(self.reservoir.layers)-1):
+            allstates,r = self.reservoir_buffer(xr,i)
+            if (i==0):
+                x_train_states = r
+            else:
+                x_train_states = np.concatenate((x_train_states,r), axis = 1)
+            xr = allstates
+        r = self.reservoir_buffer(xr,i+1)
+        x_train_states = np.concatenate((x_train_states,r), axis = 1)
+        return self.readout.score(x_train_states,y)
